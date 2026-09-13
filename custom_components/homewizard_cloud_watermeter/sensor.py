@@ -26,6 +26,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(HomeWizardLastSyncSensor(coordinator, value))
         entities.append(HomeWizardWifiSensor(coordinator, value))
         entities.append(HomeWizardOnlineSensor(coordinator, value))
+        entities.append(HomeWizardFlowRateSensor(coordinator, value))
+        entities.append(HomeWizardFlowRateTimestampSensor(coordinator, value))
 
     async_add_entities(entities)
 
@@ -117,3 +119,42 @@ class HomeWizardOnlineSensor(HomeWizardBaseSensor, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get(self._sanitized_identifier)["device"].get("onlineState", "Unknown")
+
+class HomeWizardFlowRateSensor(HomeWizardBaseSensor, SensorEntity):
+    """Average flow rate derived from the most recent 15-min cloud bucket.
+
+    Not a real-time reading: it is an average over a 15-min window and
+    only refreshes when the battery-powered device syncs to the cloud
+    (roughly every ~6h).
+    """
+
+    def __init__(self, coordinator, data):
+        super().__init__(coordinator, data)
+
+        self._attr_name = "Flow Rate"
+        self._attr_unique_id = f"{self._sanitized_identifier}_flow_rate"
+        self._attr_device_class = SensorDeviceClass.VOLUME_FLOW_RATE
+        self._attr_native_unit_of_measurement = "L/min"
+        self._attr_state_class = "measurement"
+        self._attr_suggested_display_precision = 2
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get(self._sanitized_identifier)["flow_rate"]
+
+class HomeWizardFlowRateTimestampSensor(HomeWizardBaseSensor, SensorEntity):
+    """Timestamp of the 15-min bucket used to compute the Flow Rate sensor."""
+
+    def __init__(self, coordinator, data):
+        super().__init__(coordinator, data)
+
+        self._attr_name = "Flow Rate Last Update"
+        self._attr_unique_id = f"{self._sanitized_identifier}_flow_rate_at"
+        self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:clock-fast"
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get(self._sanitized_identifier)["flow_rate_at"]

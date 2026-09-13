@@ -85,11 +85,19 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
 
             total = await self.async_inject_cleaned_stats(combined_values, device)
 
+            # Most recent non-null 15-min bucket returned by the cloud TSDB
+            # (gb=15m in api.py). Used both for last_sync_at and to derive
+            # an average flow rate over that window. This is NOT a
+            # real-time reading: it only refreshes when the battery-powered
+            # device syncs to the cloud (roughly every ~6h).
             last_sync_at = None
-
+            last_flow_rate = None
+            last_flow_rate_at = None
             for entry in reversed(combined_values):
                 if entry.get("water") is not None:
                     last_sync_at = dt_util.parse_datetime(entry["time"])
+                    last_flow_rate_at = last_sync_at
+                    last_flow_rate = float(entry["water"]) / 15.0  # L/15min -> L/min
                     break
 
             data[device['sanitized_identifier']] = ({
@@ -97,6 +105,8 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
                 "unit": UnitOfVolume.LITERS,
                 "device": device,
                 "last_sync_at": last_sync_at,
+                "flow_rate": last_flow_rate,
+                "flow_rate_at": last_flow_rate_at,
             })
 
             # Check and handle online state changes

@@ -91,13 +91,27 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
             # real-time reading: it only refreshes when the battery-powered
             # device syncs to the cloud (roughly every ~6h).
             last_sync_at = None
-            last_flow_rate = None
-            last_flow_rate_at = None
             for entry in reversed(combined_values):
                 if entry.get("water") is not None:
                     last_sync_at = dt_util.parse_datetime(entry["time"])
-                    last_flow_rate_at = last_sync_at
-                    last_flow_rate = float(entry["water"]) / 15.0  # L/15min -> L/min
+                    break
+
+            # Most recent bucket with actual non-zero consumption. The API
+            # fills empty buckets with 0.0 (not null) due to "fill": "linear"
+            # in api.py, so a plain "is not None" check stops on the first
+            # zero-consumption bucket of the current calendar day (e.g. at
+            # night, right after midnight) instead of reaching real usage
+            # from earlier — even from the previous day. Skipping zeros
+            # finds the last real reading, at the cost of showing a stale
+            # (but correctly timestamped, via flow_rate_at) value when there
+            # has been no consumption at all recently.
+            last_flow_rate = None
+            last_flow_rate_at = None
+            for entry in reversed(combined_values):
+                water_value = entry.get("water")
+                if water_value is not None and float(water_value) > 0:
+                    last_flow_rate_at = dt_util.parse_datetime(entry["time"])
+                    last_flow_rate = float(water_value) / 15.0  # L/15min -> L/min
                     break
 
             data[device['sanitized_identifier']] = ({

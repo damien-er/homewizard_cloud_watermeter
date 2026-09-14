@@ -84,9 +84,10 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
             combined_values = stats_yesterday.get("values", []) + stats_today.get("values", [])
 
             total = await self.async_inject_cleaned_stats(combined_values, device)
+            await self.async_inject_flow_rate_stats(combined_values, device)
 
-            # Most recent non-null 15-min bucket returned by the cloud TSDB
-            # (gb=15m in api.py). Used both for last_sync_at and to derive
+            # Most recent non-null 5-min bucket returned by the cloud TSDB
+            # (gb=5m in api.py). Used both for last_sync_at and to derive
             # an average flow rate over that window. This is NOT a
             # real-time reading: it only refreshes when the battery-powered
             # device syncs to the cloud (roughly every ~6h).
@@ -111,7 +112,7 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
                 water_value = entry.get("water")
                 if water_value is not None and float(water_value) > 0:
                     last_flow_rate_at = dt_util.parse_datetime(entry["time"])
-                    last_flow_rate = float(water_value) / 15.0  # L/15min -> L/min
+                    last_flow_rate = float(water_value) / 5.0  # L/5min -> L/min
                     break
 
             data[device['sanitized_identifier']] = ({
@@ -292,3 +293,82 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
         async_add_external_statistics(self.hass, metadata, stat_data)
 
         return cumulative_sum if not after_window else (after_window[-1].get("sum") or 0.0) + delta
+
+    async def async_inject_flow_rate_stats(self, values: list, device: dict):
+        """Inject a 5-min-resolution flow-rate history into Long Term
+        Statistics, separate from the hourly cumulative total above.
+
+        5 minutes matches the resolution HomeWizard's own app uses for its
+        "Day" graph view (confirmed via HomeWizard helpdesk docs), so this
+        history should look visually consistent with what's shown there —
+        though note the device itself only syncs 4x/day on battery, so
+        points between real syncs are linearly interpolated by the cloud
+        API (same as in the app), not independently measured.
+
+        Unlike async_inject_cleaned_stats (which sums usage into an
+        ever-growing total), each point here is an independent L/min
+        reading for its own 5-min bucket — a "mean" statistic, not a
+        "sum" one. This gives a detailed flow-rate graph (via the History
+        panel or a statistics-graph card) similar to the HomeWizard app's
+        own per-device chart, instead of a single current-value sensor.
+
+        Buckets with zero consumption ARE included (state=0.0), so the
+        graph shows real gaps/troughs rather than only usage spikes —
+        matching how the HomeWizard app renders it.
+        """
+        statistic_id = f"{DOMAIN}:{device['sanitized_identifier']}_flow_rate_5min"
+
+        metadata = StatisticMetaData(
+            has_sum=False,
+            has_mean=True,
+            name=f"{device.get('name')} Flow Rate (5min)",
+            source=DOMAIN,
+            statistic_id=statistic_id,
+            unit_of_measurement="L/min",
+            unit_class=None,
+            mean_type=StatisticMeanType.ARITHMETIC,
+        )
+
+        stat_data = []
+        seen_buckets = set()
+
+        # Buckets arrive in chronological order already (yesterday + today
+        # concatenated by the caller); de-dupe defensively in case the API
+        # ever returns an overlapping bucket twice.
+        for entry in values:
+            water_value = entry.get("water")
+            if water_value is None:
+                continue
+
+            bucket_time = dt_util.parse_datetime(entry["time"])
+            if not bucket_time:
+                continue
+
+            bucket_start = dt_util.as_utc(bucket_time)
+
+            # Security: don't process buckets far in the future (linear
+            # fill can produce these for the current, not-yet-elapsed
+            # part of today).
+            if bucket_start > dt_util.utcnow() + timedelta(minutes=5):
+                continue
+
+            if bucket_start in seen_buckets:
+                continue
+            seen_buckets.add(bucket_start)
+
+            flow_rate = float(water_value) / 5.0  # L/5min -> L/min
+
+            stat_data.append(
+                StatisticData(
+                    start=bucket_start,
+                    mean=flow_rate,
+                )
+            )
+
+        if not stat_data:
+            # Always register the metadata, even with no data points, so
+            # the statistic is immediately selectable in History/graphs.
+            async_add_external_statistics(self.hass, metadata, [])
+            return
+
+        async_add_external_statistics(self.hass, metadata, stat_data)

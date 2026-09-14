@@ -86,7 +86,7 @@ class HomeWizardCloudApi:
             "type": "water",
             "values": True,
             "wattage": True,
-            "gb": "15m",
+            "gb": "5m",
             "tz": timezone,
             "fill": "linear",
             "three_phases": False

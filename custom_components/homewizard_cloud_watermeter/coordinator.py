@@ -295,33 +295,47 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
         return cumulative_sum if not after_window else (after_window[-1].get("sum") or 0.0) + delta
 
     async def async_inject_flow_rate_stats(self, values: list, device: dict):
-        """Inject a 5-min-resolution flow-rate history into Long Term
-        Statistics, separate from the hourly cumulative total above.
+        """Inject an hourly flow-rate history into Long Term Statistics,
+        separate from the hourly cumulative total above.
 
-        5 minutes matches the resolution HomeWizard's own app uses for its
-        "Day" graph view (confirmed via HomeWizard helpdesk docs), so this
-        history should look visually consistent with what's shown there —
-        though note the device itself only syncs 4x/day on battery, so
-        points between real syncs are linearly interpolated by the cloud
-        API (same as in the app), not independently measured.
+        IMPORTANT: Home Assistant's external-statistics API
+        (async_add_external_statistics) only accepts StatisticData points
+        whose `start` sits exactly on the hour (minutes and seconds = 0) —
+        this is a hard constraint of external statistics, regardless of
+        the source data's own resolution. A first version of this method
+        tried to inject one point per 5-min cloud bucket directly and
+        HA rejected every point with "Invalid timestamp: timestamps must
+        be from the top of the hour", which put the whole config entry
+        into a permanent retry loop (and took the rest of the integration
+        down with it, since setup never completed).
+
+        So each 5-min cloud bucket is first averaged into its containing
+        hour, and one point per hour is stored (state=mean, mean=mean).
+        This is coarser than the raw 5-min data, but keeps the finer
+        underlying detail: a hurried burst spread over 10-15 min still
+        raises that hour's average above a quiet hour, instead of only
+        showing the old coordinator-refresh-time snapshot.
+
+        5 minutes was chosen for the *source* granularity to match
+        HomeWizard's own app "Day" graph resolution (confirmed via
+        HomeWizard helpdesk docs) — though the device itself only syncs
+        4x/day on battery, so points between real syncs are linearly
+        interpolated by the cloud API (same as in the app), not
+        independently measured.
 
         Unlike async_inject_cleaned_stats (which sums usage into an
         ever-growing total), each point here is an independent L/min
-        reading for its own 5-min bucket — a "mean" statistic, not a
-        "sum" one. This gives a detailed flow-rate graph (via the History
-        panel or a statistics-graph card) similar to the HomeWizard app's
-        own per-device chart, instead of a single current-value sensor.
+        reading for its own hour — a "mean" statistic, not a "sum" one.
 
-        Buckets with zero consumption ARE included (state=0.0), so the
-        graph shows real gaps/troughs rather than only usage spikes —
-        matching how the HomeWizard app renders it.
+        Hours with zero consumption ARE included (mean=0.0), so the graph
+        shows real troughs rather than only usage spikes.
         """
-        statistic_id = f"{DOMAIN}:{device['sanitized_identifier']}_flow_rate_5min"
+        statistic_id = f"{DOMAIN}:{device['sanitized_identifier']}_flow_rate_hourly"
 
         metadata = StatisticMetaData(
             has_sum=False,
             has_mean=True,
-            name=f"{device.get('name')} Flow Rate (5min)",
+            name=f"{device.get('name')} Flow Rate (hourly avg, 5min source)",
             source=DOMAIN,
             statistic_id=statistic_id,
             unit_of_measurement="L/min",
@@ -329,12 +343,9 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
             mean_type=StatisticMeanType.ARITHMETIC,
         )
 
-        stat_data = []
-        seen_buckets = set()
+        # Group raw 5-min flow-rate readings by their containing hour.
+        hourly_readings: dict[datetime, list[float]] = {}
 
-        # Buckets arrive in chronological order already (yesterday + today
-        # concatenated by the caller); de-dupe defensively in case the API
-        # ever returns an overlapping bucket twice.
         for entry in values:
             water_value = entry.get("water")
             if water_value is None:
@@ -352,23 +363,23 @@ class HomeWizardCloudDataUpdateCoordinator(DataUpdateCoordinator):
             if bucket_start > dt_util.utcnow() + timedelta(minutes=5):
                 continue
 
-            if bucket_start in seen_buckets:
-                continue
-            seen_buckets.add(bucket_start)
-
             flow_rate = float(water_value) / 5.0  # L/5min -> L/min
 
-            stat_data.append(
-                StatisticData(
-                    start=bucket_start,
-                    mean=flow_rate,
-                )
-            )
+            hour_start = bucket_start.replace(minute=0, second=0, microsecond=0)
+            hourly_readings.setdefault(hour_start, []).append(flow_rate)
 
-        if not stat_data:
+        if not hourly_readings:
             # Always register the metadata, even with no data points, so
             # the statistic is immediately selectable in History/graphs.
             async_add_external_statistics(self.hass, metadata, [])
             return
+
+        stat_data = [
+            StatisticData(
+                start=hour_start,
+                mean=sum(readings) / len(readings),
+            )
+            for hour_start, readings in sorted(hourly_readings.items())
+        ]
 
         async_add_external_statistics(self.hass, metadata, stat_data)

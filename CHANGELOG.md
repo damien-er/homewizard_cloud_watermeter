@@ -14,7 +14,7 @@ transitoire tant que le Watermeter reste alimenté par pile). `v2.0.0` sera
 réservé à une éventuelle refonte majeure ou à la bascule vers l'intégration
 officielle temps réel (une fois le device raccordé au secteur).
 
-## [v1.3.0] - 2026-09-14
+## [v1.3.1] - 2026-09-14
 
 ### Ajouté
 - Historique du débit en Long Term Statistics, sous un nouveau

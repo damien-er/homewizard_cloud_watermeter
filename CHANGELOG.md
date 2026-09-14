@@ -14,46 +14,6 @@ transitoire tant que le Watermeter reste alimenté par pile). `v2.0.0` sera
 réservé à une éventuelle refonte majeure ou à la bascule vers l'intégration
 officielle temps réel (une fois le device raccordé au secteur).
 
-## [v1.3.1] - 2026-09-14
-
-### Ajouté
-- Historique du débit en Long Term Statistics, sous un nouveau
-  `statistic_id` (`homewizard_cloud_watermeter:<device>_flow_rate_hourly`),
-  consultable via le panneau Historique de Home Assistant ou une carte
-  `statistics-graph`.
-- Source des données à résolution 5 minutes, pour correspondre à la
-  résolution du graphique "Jour" de l'application HomeWizard (confirmé
-  via la documentation officielle HomeWizard) — puis agrégée en moyenne
-  par heure pleine avant stockage (voir Note technique).
-- Les heures à consommation nulle sont incluses, pour un graphique
-  continu avec de vrais creux plutôt qu'un simple relevé de pics.
-
-### Modifié
-- `api.py` : paramètre `gb` passé de `"15m"` à `"5m"` dans la requête à
-  l'API cloud HomeWizard.
-- `coordinator.py` : tous les calculs de débit (`L/bucket → L/min`) ajustés
-  en conséquence (division par 5 au lieu de 15).
-
-### Note technique
-L'API `async_add_external_statistics` de Home Assistant exige que chaque
-point stocké soit ancré sur une heure pleine (minutes et secondes à 0) —
-contrainte propre aux statistics externes. Une première tentative
-d'injection point par point (un point toutes les 5 min) a été rejetée
-systématiquement par HA (`Invalid timestamp`), ce qui bloquait le
-chargement de toute l'intégration en boucle de retry. Solution retenue :
-les buckets 5 min sont regroupés et moyennés par heure avant stockage —
-un point par heure, mais dont la valeur reflète les variations fines
-détectées dans les buckets 5 min sous-jacents (un pic de 10-15 min
-remonte la moyenne de son heure). Ce n'est donc pas un vrai graphique à
-résolution 5 min dans HA, mais une moyenne horaire enrichie par cette
-granularité source.
-
-Par ailleurs, le device physique, sur pile, ne synchronise avec le cloud
-que ~4 fois par jour. Les points à 5 min entre deux synchronisations
-réelles restent de l'interpolation linéaire côté API cloud
-(`"fill": "linear"`) — comme dans l'application HomeWizard elle-même —
-et non une mesure indépendante toutes les 5 minutes.
-
 ## [v1.2.0] - 2026-09-13
 
 ### Corrigé

@@ -14,6 +14,17 @@ transitoire tant que le Watermeter reste alimenté par pile). `v2.0.0` sera
 réservé à une éventuelle refonte majeure ou à la bascule vers l'intégration
 officielle temps réel (une fois le device raccordé au secteur).
 
+## [Non publié]
+
+### Ajouté
+- Documentation : section « External statistics » dans le README (identifiants
+  `..._total` et `..._flow_rate_hourly`, exemple de carte `statistics-graph`).
+- Exemple de package Home Assistant `examples/packages/watermeter_conso_jour.yaml` :
+  capteur `sensor.eau_consommee_aujourd_hui` (litres consommés depuis 00h00),
+  capteur modèle à déclencheur qui lit la statistique `..._total` via
+  l'action `recorder.get_statistics`. Aucun changement du code de
+  l'intégration.
+
 ## [v1.3.2] - 2026-10-07
 
 ### Corrigé

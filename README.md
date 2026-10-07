@@ -70,7 +70,43 @@ Copy the `custom_components/homewizard_cloud_watermeter` folder into your `confi
 
 ---
 
+## External statistics
+
+In addition to the sensors above, the integration writes **external long-term statistics** into the Home Assistant recorder. They are *not* entities: they do not appear in entity pickers or in the entity list, but they can be used in the Energy dashboard, in `statistics-graph` / `statistic` cards, and through the `recorder.get_statistics` action.
+
+| Statistic ID | Unit | Description |
+| :--- | :--- | :--- |
+| `homewizard_cloud_watermeter:<device>_total` | L | Cumulative consumption, one point per hour (used as the water source of the Energy dashboard) |
+| `homewizard_cloud_watermeter:<device>_flow_rate_hourly` | L/min | Hourly average of the 5-minute flow-rate buckets returned by the cloud |
+
+`<device>` is the sanitized device identifier, for example `watermeter_5c2faf32c10e`. You can find the exact IDs in **Developer tools > Statistics**.
+
+Notes:
+- Home Assistant requires external statistics to be anchored on the full hour, so the resolution in HA is one point per hour even though the source data is 5-minute.
+- The device is battery powered and only syncs with the cloud a few times a day; the points between two syncs are linearly interpolated by the HomeWizard cloud.
+
+### Graphs
+
+```yaml
+type: statistics-graph
+title: Water - litres per hour
+entities:
+  - homewizard_cloud_watermeter:watermeter_5c2faf32c10e_total
+stat_types:
+  - change
+period: hour
+chart_type: bar
+days_to_show: 7
+```
+
+### "Water used today" sensor
+
+Statistics cannot be used directly by `utility_meter`. The package [`examples/packages/watermeter_conso_jour.yaml`](examples/packages/watermeter_conso_jour.yaml) creates `sensor.eau_consommee_aujourd_hui`: a trigger-based template sensor that calls `recorder.get_statistics` every 15 minutes and sums the hourly `change` since 00:00 (local time). Because it reads the statistics, consumption is attributed to the hour it really happened, even when the device syncs late. The value is, however, only as fresh as the last device sync.
+
+---
+
 ## Community & Support
+
 
 - **Found a bug?** Please open an [Issue](https://github.com/pyrech/homewizard_cloud_watermeter/issues).
 - **Want to contribute?** Pull Requests are welcome!

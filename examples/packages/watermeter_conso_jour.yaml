@@ -1,0 +1,42 @@
+# ============================================================
+# Home Assistant package: water consumed today (since 00:00)
+# File: /config/packages/watermeter_conso_jour.yaml
+#
+# Source: external statistic created by this integration
+#   homewizard_cloud_watermeter:<device>_total
+# Result: sensor.eau_consommee_aujourd_hui (litres, back to 0 at midnight)
+#
+# Before use:
+#   1. Replace "watermeter_5c2faf32c10e" below with your own device
+#      identifier (see "External statistics" in the README).
+#   2. In configuration.yaml (once):
+#        homeassistant:
+#          packages: !include_dir_named packages
+#   3. Check the configuration, then restart Home Assistant.
+# ============================================================
+
+template:
+  - trigger:
+      - trigger: time_pattern
+        minutes: "/15"
+      - trigger: homeassistant
+        event: start
+    action:
+      - action: recorder.get_statistics
+        data:
+          statistic_ids:
+            - homewizard_cloud_watermeter:watermeter_5c2faf32c10e_total
+          start_time: "{{ today_at('00:00') }}"
+          period: hour
+          types:
+            - change
+        response_variable: stats
+    sensor:
+      - name: "Eau consommée aujourd'hui"
+        unique_id: eau_consommee_aujourdhui
+        unit_of_measurement: "L"
+        device_class: water
+        icon: mdi:water
+        state: >
+          {% set s = stats.statistics.get('homewizard_cloud_watermeter:watermeter_5c2faf32c10e_total', []) %}
+          {{ s | map(attribute='change') | select('number') | sum | round(1) }}

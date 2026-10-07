@@ -14,6 +14,15 @@ transitoire tant que le Watermeter reste alimenté par pile). `v2.0.0` sera
 réservé à une éventuelle refonte majeure ou à la bascule vers l'intégration
 officielle temps réel (une fois le device raccordé au secteur).
 
+## [v1.3.2] - 2026-10-07
+
+### Corrigé
+- Republication du contenu de la v1.3.1 : le tag `v1.3.1` pointait par erreur
+  sur le commit de retour arrière vers la v1.2.0 (`gb: "15m"`, sans
+  statistique `flow_rate_hourly`), si bien que HACS installait du code
+  v1.2.0 sous l'étiquette « v1.3.1 ». Le code de cette version est
+  identique à celui de la v1.3.1 d'origine (commit `8da61f7`).
+
 ## [v1.3.1] - 2026-09-14
 
 ### Ajouté

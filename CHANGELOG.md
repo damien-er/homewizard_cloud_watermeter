@@ -25,6 +25,15 @@ officielle temps réel (une fois le device raccordé au secteur).
   l'action `recorder.get_statistics`. Aucun changement du code de
   l'intégration.
 
+## [v1.3.3] - 2026-11-19
+
+### Corrigé
+- Compatibilité avec Home Assistant 2026.11 : `EntityCategory` n'est plus
+  réexporté par `homeassistant.components.sensor`, ce qui faisait échouer le
+  chargement de la plateforme `sensor` (`ImportError`, entrée en
+  `setup_error`, capteurs « indisponible »). L'import se fait désormais depuis
+  `homeassistant.const`, compatible avec les versions antérieures de HA.
+
 ## [v1.3.2] - 2026-10-07
 
 ### Corrigé
